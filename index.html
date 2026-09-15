@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>GPS 출퇴근</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0;
+    --accent:#0f766e; --accent-soft:#ccfbf1; --danger:#b91c1c; --danger-soft:#fee2e2;
+    --warn:#b45309; --warn-soft:#fef3c7; --ok:#15803d; --ok-soft:#dcfce7;
+    --radius:16px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0b1220; --card:#131c2e; --text:#e5e7eb; --muted:#94a3b8; --line:#243047;
+      --accent:#2dd4bf; --accent-soft:#134e4a; --danger:#f87171; --danger-soft:#450a0a;
+      --warn:#fbbf24; --warn-soft:#452a06; --ok:#4ade80; --ok-soft:#052e16; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",system-ui,sans-serif;}
+  body{padding:calc(env(safe-area-inset-top,0px) + 12px) 16px calc(env(safe-area-inset-bottom,0px) + 24px);
+    max-width:480px;margin:0 auto;}
+  header{display:flex;align-items:center;justify-content:space-between;padding:6px 2px 14px}
+  header h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.01em}
+  header .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .icon-btn{background:var(--card);border:1px solid var(--line);border-radius:12px;width:40px;height:40px;
+    display:grid;place-items:center;cursor:pointer;color:var(--text);font-size:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+  .status{display:flex;align-items:center;gap:12px}
+  .dot{width:12px;height:12px;border-radius:50%;background:var(--muted);flex:none;box-shadow:0 0 0 4px var(--line)}
+  .dot.in{background:var(--ok);box-shadow:0 0 0 4px var(--ok-soft)}
+  .dot.out{background:var(--danger);box-shadow:0 0 0 4px var(--danger-soft)}
+  .dot.wait{background:var(--warn);box-shadow:0 0 0 4px var(--warn-soft)}
+  .status .t{font-weight:700;font-size:16px}
+  .status .d{font-size:13px;color:var(--muted);margin-top:2px}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+  .metric{background:var(--bg);border-radius:12px;padding:10px 12px}
+  .metric .k{font-size:11px;color:var(--muted)}
+  .metric .v{font-size:18px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+  .metric .v small{font-size:12px;font-weight:500;color:var(--muted)}
+  .clock{text-align:center;padding:6px 0 2px}
+  .clock .time{font-size:44px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1}
+  .clock .date{font-size:13px;color:var(--muted);margin-top:6px}
+  .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+  .big{border:0;border-radius:14px;padding:22px 10px;font-size:18px;font-weight:800;cursor:pointer;color:#fff;
+    transition:transform .05s, opacity .2s}
+  .big:active{transform:scale(.98)}
+  .big.in{background:var(--accent)} .big.out{background:#334155}
+  .big:disabled{opacity:.35;cursor:not-allowed}
+  .big span{display:block;font-size:11px;font-weight:500;opacity:.85;margin-top:4px}
+  .hint{font-size:12px;color:var(--muted);text-align:center;margin-top:10px;min-height:16px}
+  h2{font-size:13px;color:var(--muted);font-weight:600;margin:0 0 10px;text-transform:uppercase;letter-spacing:.04em}
+  .log{list-style:none;margin:0;padding:0}
+  .log li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line);font-size:14px}
+  .log li:first-child{border-top:0}
+  .tag{font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px}
+  .tag.in{background:var(--accent-soft);color:var(--accent)}
+  .tag.out{background:var(--line);color:var(--text)}
+  .log .when{font-variant-numeric:tabular-nums;flex:1}
+  .log .sync{font-size:11px;color:var(--muted)}
+  .log .sync.err{color:var(--danger)}
+  .empty{font-size:13px;color:var(--muted);padding:6px 0}
+  /* settings */
+  .sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:10}
+  .sheet.open{display:flex}
+  .panel{background:var(--card);width:100%;max-width:480px;margin:0 auto;border-radius:20px 20px 0 0;
+    padding:18px 16px calc(env(safe-area-inset-bottom,0px) + 20px);max-height:92vh;overflow:auto}
+  .panel h3{margin:0 0 14px;font-size:16px}
+  label{display:block;font-size:12px;color:var(--muted);margin:12px 0 6px}
+  input{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);font-size:15px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .btn{width:100%;padding:13px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text);
+    font-size:14px;font-weight:600;cursor:pointer;margin-top:10px}
+  .btn.primary{background:var(--accent);color:#fff;border-color:transparent}
+  .btn.danger{color:var(--danger)}
+  .note{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
+  .toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 28px);transform:translateX(-50%);
+    background:var(--text);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:13px;opacity:0;
+    transition:opacity .2s;pointer-events:none;z-index:20;white-space:nowrap}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="title">GPS 출퇴근</h1>
+    <div class="sub" id="who">이름 미설정 · 설정에서 입력</div>
+  </div>
+  <button class="icon-btn" id="openSettings" aria-label="설정">⚙︎</button>
+</header>
+
+<section class="card">
+  <div class="status">
+    <div class="dot wait" id="dot"></div>
+    <div>
+      <div class="t" id="stTitle">위치 확인 중…</div>
+      <div class="d" id="stDesc">GPS 권한을 허용해 주세요</div>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="k">매장까지</div><div class="v" id="mDist">–</div></div>
+    <div class="metric"><div class="k">허용 반경</div><div class="v" id="mRadius">–</div></div>
+    <div class="metric"><div class="k">GPS 오차</div><div class="v" id="mAcc">–</div></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="clock">
+    <div class="time" id="clockTime">--:--:--</div>
+    <div class="date" id="clockDate"></div>
+  </div>
+  <div class="actions">
+    <button class="big in" id="btnIn" disabled>출근<span id="btnInSub">반경 밖</span></button>
+    <button class="big out" id="btnOut" disabled>퇴근<span id="btnOutSub">반경 밖</span></button>
+  </div>
+  <div class="hint" id="hint"></div>
+</section>
+
+<section class="card">
+  <h2>최근 기록</h2>
+  <ul class="log" id="log"></ul>
+  <div class="empty" id="logEmpty">아직 기록이 없습니다.</div>
+</section>
+
+<div class="sheet" id="sheet">
+  <div class="panel">
+    <h3>설정</h3>
+    <label>이름</label>
+    <input id="fName" placeholder="홍길동">
+    <label>매장 위치 (위도 / 경도)</label>
+    <div class="row">
+      <input id="fLat" inputmode="decimal" placeholder="37.5445">
+      <input id="fLng" inputmode="decimal" placeholder="127.0560">
+    </div>
+    <button class="btn" id="useHere">📍 현재 위치를 매장 위치로 설정</button>
+    <label>허용 반경 (m)</label>
+    <input id="fRadius" inputmode="numeric" placeholder="50">
+    <label>Google Apps Script 웹앱 URL (선택)</label>
+    <input id="fUrl" placeholder="https://script.google.com/macros/s/…/exec">
+    <div class="note">비워두면 이 기기에만 기록됩니다. URL을 넣으면 출근/퇴근 시 Google Sheets에 자동 전송되며, 전송 실패분은 다음 기록 시 재시도합니다.</div>
+    <button class="btn primary" id="save">저장</button>
+    <button class="btn" id="exportCsv">기록 CSV 복사</button>
+    <button class="btn danger" id="clearLog">이 기기의 기록 삭제</button>
+    <button class="btn" id="closeSettings">닫기</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const KEY_CFG = 'gpsatt.cfg', KEY_LOG = 'gpsatt.log';
+  const MAX_ACC = 100; // GPS 오차 허용 상한(m). 이보다 부정확하면 버튼 비활성
+
+  let cfg = load(KEY_CFG, { name:'', lat:null, lng:null, radius:50, url:'' });
+  let log = load(KEY_LOG, []);
+  let pos = null, watchId = null;
+
+  function load(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch{ return d; } }
+  function save(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+  function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2200); }
+
+  // ---- 거리 계산 (Haversine)
+  function distM(a,b,c,d){
+    const R=6371000, toR=x=>x*Math.PI/180;
+    const dLat=toR(c-a), dLng=toR(d-b);
+    const h=Math.sin(dLat/2)**2+Math.cos(toR(a))*Math.cos(toR(c))*Math.sin(dLng/2)**2;
+    return 2*R*Math.asin(Math.sqrt(h));
+  }
+  const fmt2 = n => String(n).padStart(2,'0');
+  function fmtTime(d){ return `${fmt2(d.getHours())}:${fmt2(d.getMinutes())}:${fmt2(d.getSeconds())}`; }
+  function fmtDate(d){ const w='일월화수목금토'[d.getDay()]; return `${d.getFullYear()}.${fmt2(d.getMonth()+1)}.${fmt2(d.getDate())} (${w})`; }
+  function isoLocal(d){ const o=-d.getTimezoneOffset(), s=o>=0?'+':'-'; return `${d.getFullYear()}-${fmt2(d.getMonth()+1)}-${fmt2(d.getDate())}T${fmtTime(d)}${s}${fmt2(Math.floor(Math.abs(o)/60))}:${fmt2(Math.abs(o)%60)}`; }
+
+  // ---- 시계
+  setInterval(()=>{ const d=new Date(); $('clockTime').textContent=fmtTime(d); $('clockDate').textContent=fmtDate(d); },250);
+
+  // ---- 상태 판정
+  function evaluate(){
+    const dot=$('dot'), inBtn=$('btnIn'), outBtn=$('btnOut');
+    const hasStore = cfg.lat!=null && cfg.lng!=null;
+    $('mRadius').innerHTML = hasStore ? `${cfg.radius}<small>m</small>` : '–';
+    $('who').textContent = cfg.name ? `${cfg.name}` : '이름 미설정 · 설정에서 입력';
+
+    let ok=false, reason='';
+    if(!hasStore){ setStatus('wait','매장 위치 미설정','설정에서 매장 좌표를 입력하세요'); reason='매장 위치 미설정'; }
+    else if(!pos){ setStatus('wait','위치 확인 중…','GPS 신호를 기다리는 중'); reason='위치 확인 중'; }
+    else {
+      const d = distM(pos.lat,pos.lng,cfg.lat,cfg.lng);
+      $('mDist').innerHTML = d<1000 ? `${Math.round(d)}<small>m</small>` : `${(d/1000).toFixed(1)}<small>km</small>`;
+      $('mAcc').innerHTML = `±${Math.round(pos.acc)}<small>m</small>`;
+      if(pos.acc > MAX_ACC){ setStatus('wait','GPS 정확도 낮음',`오차 ±${Math.round(pos.acc)}m · 실외/창가로 이동하세요`); reason='GPS 정확도 낮음'; }
+      else if(d <= cfg.radius){ setStatus('in','매장 반경 안',`매장까지 ${Math.round(d)}m`); ok=true; }
+      else { setStatus('out','매장 반경 밖',`매장까지 ${Math.round(d)}m · 반경 ${cfg.radius}m 안으로 이동`); reason='반경 밖'; }
+    }
+    if(!cfg.name){ ok=false; reason='이름 미설정'; }
+    inBtn.disabled=!ok; outBtn.disabled=!ok;
+    $('btnInSub').textContent = ok ? '지금 기록' : reason;
+    $('btnOutSub').textContent = ok ? '지금 기록' : reason;
+
+    // 오늘 마지막 기록 힌트
+    const today = new Date().toDateString();
+    const last = log.find(r => new Date(r.ts).toDateString()===today);
+    $('hint').textContent = last ? `오늘 마지막 기록: ${last.type==='IN'?'출근':'퇴근'} ${fmtTime(new Date(last.ts))}` : '오늘 기록 없음';
+  }
+  function setStatus(cls,t,d){ $('dot').className='dot '+cls; $('stTitle').textContent=t; $('stDesc').textContent=d; }
+
+  // ---- GPS
+  function startGeo(){
+    if(!navigator.geolocation){ setStatus('out','GPS 미지원','이 브라우저는 위치를 지원하지 않습니다'); return; }
+    if(watchId!=null) navigator.geolocation.clearWatch(watchId);
+    watchId = navigator.geolocation.watchPosition(p=>{
+      pos={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}; evaluate();
+    }, e=>{
+      const m={1:'위치 권한이 거부됨 · 브라우저 설정에서 허용',2:'위치를 가져올 수 없음',3:'위치 요청 시간 초과'}[e.code]||'위치 오류';
+      setStatus('out','위치 확인 실패',m); pos=null; evaluate();
+    }, {enableHighAccuracy:true, maximumAge:5000, timeout:15000});
+  }
+
+  // ---- 기록
+  async function record(type){
+    if(!pos) return;
+    const d = new Date();
+    const entry = {
+      id: d.getTime()+'-'+Math.random().toString(36).slice(2,7),
+      ts: d.getTime(), tsLocal: isoLocal(d), name: cfg.name, type,
+      lat:+pos.lat.toFixed(6), lng:+pos.lng.toFixed(6), acc:Math.round(pos.acc),
+      dist: Math.round(distM(pos.lat,pos.lng,cfg.lat,cfg.lng)),
+      device: navigator.userAgent.slice(0,80), synced: !cfg.url
+    };
+    log.unshift(entry); log=log.slice(0,300); save(KEY_LOG,log); render();
+    if(navigator.vibrate) navigator.vibrate(30);
+    toast(`${type==='IN'?'출근':'퇴근'} ${fmtTime(d)} 기록됨`);
+    if(cfg.url) await syncPending();
+  }
+
+  async function syncPending(){
+    const pending = log.filter(r=>!r.synced);
+    if(!pending.length || !cfg.url) return;
+    for(const r of pending.slice().reverse()){
+      try{
+        const res = await fetch(cfg.url, { method:'POST', body: JSON.stringify(r) }); // text/plain → CORS preflight 없음
+        const j = await res.json().catch(()=>({}));
+        if(res.ok && j.ok!==false){ r.synced=true; r.err=''; }
+        else { r.err = j.error || ('HTTP '+res.status); }
+      }catch(e){ r.err = '전송 실패'; }
+    }
+    save(KEY_LOG,log); render();
+    const left = log.filter(r=>!r.synced).length;
+    if(left) toast(`시트 전송 실패 ${left}건 · 다음 기록 시 재시도`);
+  }
+
+  function render(){
+    const ul=$('log'); ul.innerHTML='';
+    const rows = log.slice(0,20);
+    $('logEmpty').style.display = rows.length?'none':'block';
+    for(const r of rows){
+      const li=document.createElement('li');
+      const d=new Date(r.ts);
+      li.innerHTML = `<span class="tag ${r.type==='IN'?'in':'out'}">${r.type==='IN'?'출근':'퇴근'}</span>
+        <span class="when">${fmtDate(d).slice(5)} ${fmtTime(d)}</span>
+        <span class="sync ${r.synced?'':'err'}">${cfg.url ? (r.synced?'시트 ✓':'미전송') : '기기'}</span>`;
+      ul.appendChild(li);
+    }
+    evaluate();
+  }
+
+  // ---- 설정 UI
+  function openSettings(){
+    $('fName').value=cfg.name; $('fLat').value=cfg.lat??''; $('fLng').value=cfg.lng??'';
+    $('fRadius').value=cfg.radius; $('fUrl').value=cfg.url; $('sheet').classList.add('open');
+  }
+  $('openSettings').onclick=openSettings;
+  $('closeSettings').onclick=()=>$('sheet').classList.remove('open');
+  $('sheet').addEventListener('click',e=>{ if(e.target.id==='sheet') $('sheet').classList.remove('open'); });
+  $('useHere').onclick=()=>{
+    if(!pos){ toast('아직 위치를 못 잡았습니다'); return; }
+    $('fLat').value=pos.lat.toFixed(6); $('fLng').value=pos.lng.toFixed(6);
+    toast(`현재 위치 입력됨 (오차 ±${Math.round(pos.acc)}m)`);
+  };
+  $('save').onclick=()=>{
+    const lat=parseFloat($('fLat').value), lng=parseFloat($('fLng').value), radius=parseInt($('fRadius').value,10);
+    cfg = { name:$('fName').value.trim(), lat:isFinite(lat)?lat:null, lng:isFinite(lng)?lng:null,
+            radius:isFinite(radius)&&radius>0?radius:50, url:$('fUrl').value.trim() };
+    save(KEY_CFG,cfg); $('sheet').classList.remove('open'); toast('저장됨'); render();
+    if(cfg.url) syncPending();
+  };
+  $('exportCsv').onclick=async()=>{
+    const head='일시,이름,구분,위도,경도,오차m,매장거리m,시트전송';
+    const body=log.slice().reverse().map(r=>[r.tsLocal,r.name,r.type==='IN'?'출근':'퇴근',r.lat,r.lng,r.acc,r.dist,r.synced?'Y':'N'].join(','));
+    const csv=[head,...body].join('\n');
+    try{ await navigator.clipboard.writeText(csv); toast(`CSV ${body.length}행 복사됨`); }catch{ prompt('복사:',csv); }
+  };
+  $('clearLog').onclick=()=>{ if(confirm('이 기기의 기록을 모두 삭제할까요? (시트 데이터는 유지)')){ log=[]; save(KEY_LOG,log); render(); } };
+
+  $('btnIn').onclick=()=>record('IN');
+  $('btnOut').onclick=()=>record('OUT');
+
+  // ---- 시작
+  render(); startGeo();
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) startGeo(); });
+  if(!cfg.lat) setTimeout(openSettings, 600);
+})();
+</script>
+</body>
+</html>
