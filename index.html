@@ -156,6 +156,9 @@
     <label>허용 반경 (m) · 최소 10m</label>
     <input id="fRadius" inputmode="numeric" placeholder="50">
     <div class="note">GPS 오차(±m)만큼 여유를 두고 판정합니다. 예: 반경 10m, 오차 ±8m면 매장에서 18m 이내까지 인정. 실내 오차가 크면 실질 반경도 커집니다.</div>
+    <label>카카오 JavaScript 키 (매장 검색용 · 선택)</label>
+    <input id="fKakao" placeholder="developers.kakao.com 앱 키 → JavaScript 키">
+    <div class="note">키를 넣으면 카카오맵 기준으로 국내 상호·주소를 검색합니다. 없으면 OpenStreetMap으로 검색합니다.</div>
     <label>Google Apps Script 웹앱 URL (선택)</label>
     <input id="fUrl" placeholder="https://script.google.com/macros/s/…/exec">
     <div class="note">비워두면 이 기기에만 기록됩니다. URL을 넣으면 출근/퇴근 시 Google Sheets에 자동 전송되며, 전송 실패분은 다음 기록 시 재시도합니다.</div>
@@ -173,7 +176,7 @@
   const KEY_CFG = 'gpsatt.cfg', KEY_LOG = 'gpsatt.log';
   const MAX_ACC = 100; // GPS 오차 허용 상한(m). 이보다 부정확하면 버튼 비활성
 
-  let cfg = load(KEY_CFG, { name:'', lat:null, lng:null, radius:50, url:'' });
+  let cfg = load(KEY_CFG, { name:'', lat:null, lng:null, radius:50, url:'', kakao:'' });
   let log = load(KEY_LOG, []);
   let pos = null, watchId = null;
 
@@ -289,7 +292,7 @@
   // ---- 설정 UI
   function openSettings(){
     $('fName').value=cfg.name; $('fLat').value=cfg.lat??''; $('fLng').value=cfg.lng??'';
-    $('fRadius').value=cfg.radius; $('fUrl').value=cfg.url; $('sheet').classList.add('open');
+    $('fRadius').value=cfg.radius; $('fUrl').value=cfg.url; $('fKakao').value=cfg.kakao||''; $('sheet').classList.add('open');
   }
   $('openSettings').onclick=openSettings;
   $('closeSettings').onclick=()=>$('sheet').classList.remove('open');
@@ -320,24 +323,59 @@
     window.open(`https://www.google.com/maps?q=${lat},${lng}`,'_blank');
   };
 
-  // 매장 검색 (OpenStreetMap Nominatim · 키 불필요)
+  // ---- 매장 검색: 카카오 키가 있으면 카카오맵(Places), 없으면 OpenStreetMap
+  let kakaoReady=null;
+  function loadKakao(key){
+    if(!key) return Promise.resolve(false);
+    if(kakaoReady) return kakaoReady;
+    kakaoReady=new Promise(resolve=>{
+      const s=document.createElement('script');
+      s.src=`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&libraries=services&autoload=false`;
+      s.onload=()=>{ try{ window.kakao.maps.load(()=>resolve(true)); }catch{ resolve(false); } };
+      s.onerror=()=>resolve(false);
+      document.head.appendChild(s);
+    });
+    return kakaoReady;
+  }
+  function showResults(items){ // items: [{name, addr, lat, lng}]
+    const ul=$('results'); ul.innerHTML='';
+    if(!items.length){ ul.innerHTML='<li class="msg">결과 없음 · 다른 키워드로 검색하거나 구글맵 링크를 좌표칸에 붙여넣으세요</li>'; return; }
+    for(const p of items){
+      const li=document.createElement('li');
+      li.innerHTML=`<b>${p.name}</b>${p.addr}`;
+      li.onclick=()=>{ applyCoords({lat:p.lat,lng:p.lng}, `${p.name} 좌표 입력됨`); ul.innerHTML=''; $('fSearch').value=p.name; };
+      ul.appendChild(li);
+    }
+  }
+  async function searchKakao(q){
+    const ok=await loadKakao(($('fKakao').value||cfg.kakao||'').trim());
+    if(!ok) return null;
+    return new Promise(resolve=>{
+      new kakao.maps.services.Places().keywordSearch(q,(data,status)=>{
+        if(status===kakao.maps.services.Status.OK) resolve(data.slice(0,8).map(p=>({name:p.place_name, addr:(p.road_address_name||p.address_name)+(p.category_name?' · '+p.category_name.split(' > ').pop():''), lat:+p.y, lng:+p.x})));
+        else if(status===kakao.maps.services.Status.ZERO_RESULT) resolve([]);
+        else resolve(null);
+      });
+    });
+  }
+  async function searchOSM(q){
+    const u=`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=kr&accept-language=ko&q=${encodeURIComponent(q)}`;
+    const res=await fetch(u,{headers:{'Accept':'application/json'}});
+    const list=await res.json();
+    return list.map(p=>({name:p.name||p.display_name.split(',')[0], addr:p.display_name, lat:+p.lat, lng:+p.lon}));
+  }
   async function searchPlace(){
     const q=$('fSearch').value.trim(); const ul=$('results');
     if(!q) return;
     ul.innerHTML='<li class="msg">검색 중…</li>';
     try{
-      const u=`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=kr&accept-language=ko&q=${encodeURIComponent(q)}`;
-      const res=await fetch(u,{headers:{'Accept':'application/json'}});
-      const list=await res.json();
-      if(!list.length){ ul.innerHTML='<li class="msg">결과 없음 · 주소(도로명)로 검색하거나 구글맵 링크를 좌표칸에 붙여넣으세요</li>'; return; }
-      ul.innerHTML='';
-      for(const p of list){
-        const li=document.createElement('li');
-        const name=p.name||p.display_name.split(',')[0];
-        li.innerHTML=`<b>${name}</b>${p.display_name}`;
-        li.onclick=()=>{ applyCoords({lat:+p.lat,lng:+p.lon}, `${name} 좌표 입력됨`); ul.innerHTML=''; $('fSearch').value=name; };
-        ul.appendChild(li);
+      let items=null;
+      if(($('fKakao').value||cfg.kakao||'').trim()){
+        items=await searchKakao(q);
+        if(items===null){ ul.innerHTML='<li class="msg">카카오 검색 실패 · JavaScript 키, 플랫폼 도메인(https://liamaaaaa.github.io) 등록, 카카오맵 활성화 여부를 확인하세요</li>'; return; }
       }
+      if(items===null) items=await searchOSM(q);
+      showResults(items);
     }catch(e){ ul.innerHTML='<li class="msg">검색 실패 · 네트워크를 확인하거나 좌표를 직접 입력하세요</li>'; }
   }
   $('doSearch').onclick=searchPlace;
@@ -346,7 +384,8 @@
   $('save').onclick=()=>{
     const lat=parseFloat($('fLat').value), lng=parseFloat($('fLng').value), radius=parseInt($('fRadius').value,10);
     cfg = { name:$('fName').value.trim(), lat:isFinite(lat)?lat:null, lng:isFinite(lng)?lng:null,
-            radius:isFinite(radius)&&radius>0?Math.max(10,radius):50, url:$('fUrl').value.trim() };
+            radius:isFinite(radius)&&radius>0?Math.max(10,radius):50, url:$('fUrl').value.trim(), kakao:$('fKakao').value.trim() };
+    if(cfg.kakao && !kakaoReady) loadKakao(cfg.kakao);
     save(KEY_CFG,cfg); $('sheet').classList.remove('open'); toast('저장됨'); render();
     if(cfg.url) syncPending();
   };
