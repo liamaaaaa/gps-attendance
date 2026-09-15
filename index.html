@@ -174,6 +174,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const KEY_CFG = 'gpsatt.cfg', KEY_LOG = 'gpsatt.log';
+  const KAKAO_JS_KEY = ''; // ← 여기에 카카오 JavaScript 키를 넣으면 모든 기기에서 자동 적용 (설정 화면 입력값이 우선)
   const MAX_ACC = 100; // GPS 오차 허용 상한(m). 이보다 부정확하면 버튼 비활성
 
   let cfg = load(KEY_CFG, { name:'', lat:null, lng:null, radius:50, url:'', kakao:'' });
@@ -348,7 +349,7 @@
     }
   }
   async function searchKakao(q){
-    const ok=await loadKakao(($('fKakao').value||cfg.kakao||'').trim());
+    const ok=await loadKakao(($('fKakao').value||cfg.kakao||KAKAO_JS_KEY||'').trim());
     if(!ok) return null;
     return new Promise(resolve=>{
       new kakao.maps.services.Places().keywordSearch(q,(data,status)=>{
@@ -370,7 +371,7 @@
     ul.innerHTML='<li class="msg">검색 중…</li>';
     try{
       let items=null;
-      if(($('fKakao').value||cfg.kakao||'').trim()){
+      if(($('fKakao').value||cfg.kakao||KAKAO_JS_KEY||'').trim()){
         items=await searchKakao(q);
         if(items===null){ ul.innerHTML='<li class="msg">카카오 검색 실패 · JavaScript 키, 플랫폼 도메인(https://liamaaaaa.github.io) 등록, 카카오맵 활성화 여부를 확인하세요</li>'; return; }
       }
