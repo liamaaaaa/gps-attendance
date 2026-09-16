@@ -68,7 +68,7 @@
   .sheet{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:10}
   .sheet.open{display:flex}
   .panel{background:var(--card);width:100%;max-width:480px;margin:0 auto;border-radius:20px 20px 0 0;
-    padding:18px 16px calc(env(safe-area-inset-bottom,0px) + 20px);max-height:92vh;overflow:auto}
+    padding:18px 16px calc(env(safe-area-inset-bottom,0px) + 20px);height:92vh;height:92dvh;overflow:auto;overscroll-behavior:contain}
   .panel h3{margin:0 0 14px;font-size:16px}
   label{display:block;font-size:12px;color:var(--muted);margin:12px 0 6px}
   input{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);font-size:15px}
@@ -297,7 +297,8 @@
   }
   $('openSettings').onclick=openSettings;
   $('closeSettings').onclick=()=>$('sheet').classList.remove('open');
-  $('sheet').addEventListener('click',e=>{ if(e.target.id==='sheet') $('sheet').classList.remove('open'); });
+  // 바깥 영역 탭으로 닫지 않음(모바일에서 검색 결과 선택 직후 오탭으로 설정창이 닫히는 문제 방지) — 닫기는 '닫기'/'저장' 버튼으로만
+  $('sheet').querySelectorAll('input').forEach(inp=>inp.addEventListener('keydown',e=>{ if(e.key==='Enter' && inp.id!=='fSearch'){ e.preventDefault(); inp.blur(); } }));
   $('useHere').onclick=()=>{
     if(!pos){ toast('아직 위치를 못 잡았습니다'); return; }
     $('fLat').value=pos.lat.toFixed(6); $('fLng').value=pos.lng.toFixed(6);
