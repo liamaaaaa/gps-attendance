@@ -71,6 +71,7 @@
     padding:18px 16px calc(env(safe-area-inset-bottom,0px) + 20px);height:92vh;height:92dvh;overflow:auto;overscroll-behavior:contain}
   .panel h3{margin:0 0 14px;font-size:16px}
   label{display:block;font-size:12px;color:var(--muted);margin:12px 0 6px}
+  select{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);font-size:15px}
   input{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);font-size:15px}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   .row.search{grid-template-columns:1fr auto}
@@ -138,7 +139,10 @@
     <h3>설정</h3>
     <label>이름</label>
     <input id="fName" placeholder="홍길동">
-    <label>매장 검색 (상호 또는 주소)</label>
+    <label>근무 매장 선택</label>
+    <select id="fStoreSel"><option value="">매장을 선택하세요</option></select>
+    <div class="note">선택하면 매장 좌표·반경이 자동 설정되며, 해당 매장 반경 안에서만 출퇴근이 가능합니다. 목록에 없으면 아래에서 직접 검색하세요.</div>
+    <label>매장 직접 검색 (상호 또는 주소)</label>
     <div class="row search">
       <input id="fSearch" placeholder="예: 제이드앤워터 성수 / 성수동 연무장길 …">
       <button class="btn" id="doSearch" type="button">검색</button>
@@ -174,10 +178,17 @@
 (() => {
   const $ = id => document.getElementById(id);
   const KEY_CFG = 'gpsatt.cfg', KEY_LOG = 'gpsatt.log';
+  // 사전 등록 매장 (카카오맵 좌표 기준) — 반경은 매장별 기본값, 설정에서 조정 가능
+  const STORES = [
+    { name:'제이드앤워터 성수LCDC점', addr:'서울 성동구 연무장17길 10', lat:37.541731, lng:127.061553, radius:10 },
+    { name:'제이드앤워터 옥수점',      addr:'서울 성동구 한림말3길 21-1', lat:37.542895, lng:127.015400, radius:10 },
+    { name:'제이드앤워터 서울역점',    addr:'서울 중구 퇴계로 15',        lat:37.557091, lng:126.974501, radius:10 },
+    { name:'제이드앤워터 스타필드하남', addr:'경기 하남시 미사대로 750',   lat:37.544957, lng:127.222881, radius:10 },
+  ];
   const KAKAO_JS_KEY = ''; // ← 여기에 카카오 JavaScript 키를 넣으면 모든 기기에서 자동 적용 (설정 화면 입력값이 우선)
   const MAX_ACC = 100; // GPS 오차 허용 상한(m). 이보다 부정확하면 버튼 비활성
 
-  let cfg = load(KEY_CFG, { name:'', lat:null, lng:null, radius:50, url:'', kakao:'' });
+  let cfg = load(KEY_CFG, { name:'', store:'', lat:null, lng:null, radius:50, url:'', kakao:'' });
   let log = load(KEY_LOG, []);
   let pos = null, watchId = null;
 
@@ -205,7 +216,7 @@
     const dot=$('dot'), inBtn=$('btnIn'), outBtn=$('btnOut');
     const hasStore = cfg.lat!=null && cfg.lng!=null;
     $('mRadius').innerHTML = hasStore ? `${cfg.radius}<small>m</small>` : '–';
-    $('who').textContent = cfg.name ? `${cfg.name}` : '이름 미설정 · 설정에서 입력';
+    $('who').textContent = cfg.name ? `${cfg.name}${cfg.store ? ' · ' + cfg.store : ''}` : '이름 미설정 · 설정에서 입력';
 
     let ok=false, reason='';
     if(!hasStore){ setStatus('wait','매장 위치 미설정','설정에서 매장 좌표를 입력하세요'); reason='매장 위치 미설정'; }
@@ -215,8 +226,8 @@
       $('mDist').innerHTML = d<1000 ? `${Math.round(d)}<small>m</small>` : `${(d/1000).toFixed(1)}<small>km</small>`;
       $('mAcc').innerHTML = `±${Math.round(pos.acc)}<small>m</small>`;
       if(pos.acc > MAX_ACC){ setStatus('wait','GPS 정확도 낮음',`오차 ±${Math.round(pos.acc)}m · 실외/창가로 이동하세요`); reason='GPS 정확도 낮음'; }
-      else if(d - pos.acc <= cfg.radius){ setStatus('in','매장 반경 안',`매장까지 ${Math.round(d)}m (오차 ±${Math.round(pos.acc)}m 반영)`); ok=true; }
-      else { setStatus('out','매장 반경 밖',`매장까지 ${Math.round(d)}m · 반경 ${cfg.radius}m 안으로 이동`); reason='반경 밖'; }
+      else if(d - pos.acc <= cfg.radius){ setStatus('in','매장 반경 안',`${cfg.store||'매장'}까지 ${Math.round(d)}m (오차 ±${Math.round(pos.acc)}m 반영)`); ok=true; }
+      else { setStatus('out','매장 반경 밖',`${cfg.store||'매장'}까지 ${Math.round(d)}m · 반경 ${cfg.radius}m 안으로 이동`); reason='반경 밖'; }
     }
     if(!cfg.name){ ok=false; reason='이름 미설정'; }
     inBtn.disabled=!ok; outBtn.disabled=!ok;
@@ -291,7 +302,15 @@
   }
 
   // ---- 설정 UI
+  const storeSel=$('fStoreSel');
+  storeSel.innerHTML='<option value="">매장을 선택하세요</option>'+STORES.map((s,i)=>`<option value="${i}">${s.name} · ${s.addr}</option>`).join('')+'<option value="custom">직접 검색/입력</option>';
+  storeSel.onchange=()=>{
+    const s=STORES[storeSel.value]; if(!s) return;
+    $('fLat').value=s.lat.toFixed(6); $('fLng').value=s.lng.toFixed(6); $('fRadius').value=s.radius; $('fSearch').value=''; $('results').innerHTML='';
+    toast(`${s.name} 좌표·반경 적용됨`);
+  };
   function openSettings(){
+    const idx=STORES.findIndex(s=>s.name===cfg.store); storeSel.value = idx>=0 ? String(idx) : (cfg.lat!=null ? 'custom' : '');
     $('fName').value=cfg.name; $('fLat').value=cfg.lat??''; $('fLng').value=cfg.lng??'';
     $('fRadius').value=cfg.radius; $('fUrl').value=cfg.url; $('fKakao').value=cfg.kakao||''; $('sheet').classList.add('open');
   }
@@ -385,7 +404,9 @@
 
   $('save').onclick=()=>{
     const lat=parseFloat($('fLat').value), lng=parseFloat($('fLng').value), radius=parseInt($('fRadius').value,10);
-    cfg = { name:$('fName').value.trim(), lat:isFinite(lat)?lat:null, lng:isFinite(lng)?lng:null,
+    const sel=STORES[storeSel.value];
+    const storeName = sel ? sel.name : ($('fSearch').value.trim() || (isFinite(lat) ? '직접 입력 매장' : ''));
+    cfg = { name:$('fName').value.trim(), store:storeName, lat:isFinite(lat)?lat:null, lng:isFinite(lng)?lng:null,
             radius:isFinite(radius)&&radius>0?Math.max(10,radius):50, url:$('fUrl').value.trim(), kakao:$('fKakao').value.trim() };
     if(cfg.kakao && !kakaoReady) loadKakao(cfg.kakao);
     save(KEY_CFG,cfg); $('sheet').classList.remove('open'); toast('저장됨'); render();
